@@ -67,6 +67,8 @@ import net.opengis.swe.v20.AllowedTimes;
 import net.opengis.swe.v20.AllowedTokens;
 import net.opengis.swe.v20.AllowedValues;
 import net.opengis.swe.v20.DataComponent;
+import net.opengis.swe.v20.DataRecord;
+import net.opengis.swe.v20.Vector;
 
 
 @SuppressWarnings("javadoc")
@@ -2352,7 +2354,7 @@ public class SMLJsonBindings
     protected void writePosition(JsonWriter writer, Serializable bean) throws IOException
     {
         writer.name("position");
-        
+
         if (bean instanceof Point)
         {
             geojsonBindings.writePoint(writer, (Point)bean);
@@ -2361,6 +2363,33 @@ public class SMLJsonBindings
         {
             geoposeBindings.writePose(writer, (Pose)bean);
         }
+        else if (bean instanceof Vector)
+        {
+            // Vector deprecated, use Point format for position
+            writeVectorAsPoint(writer, (Vector)bean);
+        }
+        else if (bean instanceof DataRecord)
+        {
+            // DataRecord including location and orientation, write location Vector as Point
+            Vector location = (Vector) ((DataRecord) bean).getComponent("location");
+            writeVectorAsPoint(writer, location);
+        }
+    }
+
+    protected void writeVectorAsPoint(JsonWriter writer, Vector bean) throws IOException {
+        int dims = bean.getNumCoordinates();
+        double[] coords = new double[dims];
+
+        for(int i = 0; i < dims; i++)
+        {
+            coords[i] = bean.getCoordinateList().get(i).getData().getDoubleValue();
+        }
+
+        Point point = gmlFactory.newPoint();
+        point.setSrsDimension(dims);
+        point.setPos(coords);
+
+        geojsonBindings.writePoint(writer, point);
     }
     
     
