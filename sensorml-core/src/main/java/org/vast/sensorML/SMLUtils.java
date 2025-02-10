@@ -11,7 +11,12 @@
  
  The Original Code is the "SensorML DataProcessing Engine".
  
- The Initial Developer of the Original Code is the VAST team at the University of Alabama in Huntsville (UAH). <http://vast.uah.edu> Portions created by the Initial Developer are Copyright (C) 2007 the Initial Developer. All Rights Reserved. Please Contact Mike Botts <mike.botts@uah.edu> for more information.
+ The Initial Developer of the Original Code is the VAST team at the
+ University of Alabama in Huntsville (UAH). <http://vast.uah.edu>
+ Portions created by the Initial Developer are Copyright (C) 2007
+ the Initial Developer. All Rights Reserved.
+
+ Please Contact Mike Botts <mike.botts@uah.edu> for more information.
  
  Contributor(s): 
     Alexandre Robin <robin@nsstc.uah.edu>
@@ -23,23 +28,30 @@ package org.vast.sensorML;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.OutputStreamWriter;
 import java.net.URISyntaxException;
 import java.net.URL;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamReader;
 import javax.xml.stream.XMLStreamWriter;
+import com.google.gson.stream.JsonWriter;
 import net.opengis.HrefResolver;
 import net.opengis.OgcProperty;
 import net.opengis.OgcPropertyList;
 import net.opengis.gml.v32.Reference;
+import net.opengis.gml.v32.impl.ReferenceImpl;
+import net.opengis.sensorml.v20.IOPropertyList;
 import net.opengis.sensorml.v20.AbstractProcess;
 import net.opengis.sensorml.v20.AggregateProcess;
 import net.opengis.sensorml.v20.ArraySetting;
 import net.opengis.sensorml.v20.ConstraintSetting;
 import net.opengis.sensorml.v20.Link;
+import net.opengis.sensorml.v20.impl.SettingsImpl;
 import net.opengis.sensorml.v20.Settings;
 import net.opengis.sensorml.v20.SimpleProcess;
 import net.opengis.sensorml.v20.ValueSetting;
+import net.opengis.swe.v20.AbstractSWEIdentifiable;
+import net.opengis.swe.v20.DataRecord;
 import net.opengis.swe.v20.DataArray;
 import net.opengis.swe.v20.DataComponent;
 import net.opengis.swe.v20.DataConstraint;
@@ -48,6 +60,7 @@ import net.opengis.swe.v20.RangeComponent;
 import net.opengis.swe.v20.ScalarComponent;
 import org.vast.data.EncodedValuesImpl;
 import org.vast.ogc.OGCRegistry;
+import org.vast.process.ExecutableProcessImpl;
 import org.vast.process.ExecutableChainImpl;
 import org.vast.process.IProcessChainExec;
 import org.vast.process.IProcessExec;
@@ -82,8 +95,8 @@ public class SMLUtils extends XMLBindingsUtils
     public static final String V2_1 = "2.1";
     
     IProcessFactory processFactory = new ProcessLoader();
-    
-    
+
+
     static
     {
         IC = "IC";
@@ -198,6 +211,20 @@ public class SMLUtils extends XMLBindingsUtils
     public void writeProcess(OutputStream os, AbstractProcess process, boolean indent) throws XMLWriterException
     {
         writeToStream(os, process, ObjectType.Process, indent);
+    }
+
+    /**
+     * Serializes a SensorML process to an OutputStream in JSON format
+     * @param os Output stream to write to
+     * @param process Process object to serialize
+     * @throws IOException if an error occurs while writing to the output stream
+     */
+    public void writeProcessJSON(OutputStream os, AbstractProcess process) throws IOException {
+        SMLJsonBindings jsonBindings = new SMLJsonBindings();
+        JsonWriter writer = new JsonWriter(new OutputStreamWriter(os));
+        writer.setIndent("");
+        jsonBindings.writeDescribedObject(writer, process);
+        writer.flush();
     }
     
     
@@ -589,4 +616,142 @@ public class SMLUtils extends XMLBindingsUtils
             }
         }
     }
+
+    public ProcessChainBuilder createProcessChain() {
+        return new ProcessChainBuilder();
+    }
+
+    public class ProcessChainBuilder {
+        ReferenceImpl controlType = new ReferenceImpl("urn:osh:process:datasink:commandstream");
+        ReferenceImpl sourceType = new ReferenceImpl("urn:osh:process:datasource:stream");
+        AggregateProcessImpl aggregateProcess;
+
+        ProcessChainBuilder() {
+            aggregateProcess = new AggregateProcessImpl();
+        }
+
+        public ProcessChainBuilder uid(String uid) {
+            aggregateProcess.setUniqueIdentifier(uid);
+            return this;
+        }
+
+        public ProcessChainBuilder name(String name) {
+            aggregateProcess.setName(name);
+            return this;
+        }
+
+        public ProcessChainBuilder description(String description) {
+            aggregateProcess.setDescription(description);
+            return this;
+        }
+
+        /**
+         * Adds output to aggregate process
+         *
+         * @param output DataRecord that describes output
+         */
+        public ProcessChainBuilder addOutput(DataRecord output) {
+            aggregateProcess.addOutput(output.getName(), output);
+            return this;
+        }
+
+        public ProcessChainBuilder addOutput(String name, DataRecord output) {
+            aggregateProcess.addOutput(name, output);
+            return this;
+        }
+
+        /**
+         * Adds output list to aggregate process
+         *
+         * @param outputs List of outputs from a process
+         */
+        public ProcessChainBuilder addOutputList(IOPropertyList outputs) {
+            for (AbstractSWEIdentifiable output : outputs) {
+                DataComponent outputData = (DataComponent) output;
+                aggregateProcess.addOutput(outputData.getName(), outputData);
+            }
+            return this;
+        }
+
+        /**
+         * Adds input to aggregate process
+         *
+         * @param input DataRecord that describes input
+         */
+        public ProcessChainBuilder addInput(DataRecord input) {
+            aggregateProcess.addInput(input.getName(), input);
+            return this;
+        }
+
+        public ProcessChainBuilder addInput(String name, DataRecord input) {
+            aggregateProcess.addInput(name, input);
+            return this;
+        }
+
+        /**
+         * Adds process to aggregate process
+         *
+         * @param process Class of process
+         */
+        public ProcessChainBuilder addProcess(String name, ExecutableProcessImpl process) throws ProcessException {
+            process.init();
+            SimpleProcessImpl execProcess = new SimpleProcessImpl();
+            execProcess.setExecutableImpl(process);
+
+            aggregateProcess.addComponent(name, execProcess);
+            return this;
+        }
+
+        /**
+         * Adds datasource to aggregate process
+         *
+         * @param systemUID System UID of datasource
+         */
+        public ProcessChainBuilder addDataSource(String name, String systemUID) {
+            SimpleProcessImpl source = new SimpleProcessImpl();
+            source.setTypeOf(sourceType);
+            SettingsImpl settings = new SettingsImpl();
+            settings.addSetValue("parameters/producerURI", systemUID);
+            source.setConfiguration(settings);
+
+            aggregateProcess.addComponent(name, source);
+            return this;
+        }
+
+        /**
+         * Adds control stream to aggregate process
+         *
+         * @param systemUID System UID of control stream
+         * @param inputName Name of control stream input
+         */
+        public ProcessChainBuilder addControlStream(String name, String systemUID, String inputName) {
+            SimpleProcessImpl control = new SimpleProcessImpl();
+            control.setTypeOf(controlType);
+            SettingsImpl settings = new SettingsImpl();
+            settings.addSetValue("parameters/systemUID", systemUID);
+            settings.addSetValue("parameters/inputName", inputName);
+
+            control.setConfiguration(settings);
+
+            aggregateProcess.addComponent(name, control);
+            return this;
+        }
+
+        /**
+         * Adds connection to link inputs to outputs or vice-versa
+         *
+         * @param source String of source of connection
+         * @param destination String of destination of connection
+         */
+        public ProcessChainBuilder addConnection(String source, String destination) {
+            aggregateProcess.addConnection(new LinkImpl(source, destination));
+            return this;
+        }
+
+        public AggregateProcess build() {
+            return aggregateProcess;
+        }
+
+    }
+
 }
